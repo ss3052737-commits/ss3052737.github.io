@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>時間管理桌遊 · 連線版</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root{
+  --bg:#EEF1F4; --card:#FFFFFF; --ink:#16202A; --soft:#5E6D79; --line:#D6DEE5;
+  --line2:#E8EDF1; --dim:#F5F8FA;
+  --v:#C4423A; --w:#2F6DB5; --j:#B5790F; --h:#2F7D52;
+  --vb:#F8E4E2; --wb:#E3EDF9; --jb:#F9EFD9; --hb:#E1EFE7; --accent:#C4423A;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#10161B; --card:#1A232B; --ink:#E6ECF1; --soft:#94A4B1;
+    --line:#2C3844; --line2:#232E38; --dim:#1E2830;
+    --v:#E8776B; --w:#78ABE4; --j:#DFAE44; --h:#5CB683;
+    --vb:#3B2320; --wb:#1C2C3E; --jb:#372C15; --hb:#193024; --accent:#E8776B;
+  }
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+body{margin:0; background:var(--bg); color:var(--ink); font-size:16px; line-height:1.7;
+  font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
+.app{max-width:640px; margin:0 auto; padding:0 14px 40px}
+h1,h2,h3{font-family:"Noto Serif TC",serif; font-weight:700; margin:0}
+button{font-family:inherit; font-size:1rem; cursor:pointer; border:0; border-radius:8px}
+button:disabled{opacity:.4; cursor:default}
+button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.btn{background:var(--ink); color:var(--bg); padding:13px 22px; font-weight:500; width:100%}
+.btn.alt{background:transparent; color:var(--ink); border:1px solid var(--line)}
+.btn.go{background:var(--accent); color:#fff}
+.btn.sm{padding:8px 14px; font-size:.85rem; width:auto; border-radius:6px}
+input,select{font-family:inherit; font-size:1rem; padding:12px 14px; width:100%;
+  border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink)}
+.panel{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:14px}
+.muted{color:var(--soft); font-size:.88rem; line-height:1.65}
+.row{display:flex; gap:10px; align-items:center}
+.stack{display:flex; flex-direction:column; gap:10px}
+.coin{display:inline-flex; align-items:center; gap:3px; font-weight:700; font-size:.9rem; font-variant-numeric:tabular-nums}
+.coin b{width:20px; height:20px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:.7rem; font-weight:500}
+.coin.v{color:var(--v)} .coin.v b{background:var(--vb)}
+.coin.w{color:var(--w)} .coin.w b{background:var(--wb)}
+.coin.j{color:var(--j)} .coin.j b{background:var(--jb)}
+.coin.h{color:var(--h)} .coin.h b{background:var(--hb)}
+.coin.zero{opacity:.3}
+.hero{padding:44px 0 20px; text-align:center}
+.hero h1{font-size:1.9rem; line-height:1.35; margin-bottom:10px}
+.hero p{margin:0; color:var(--soft); font-size:.94rem}
+.code-in{text-align:center; letter-spacing:.3em; font-size:1.6rem; font-weight:700; text-transform:uppercase}
+.roomcode{font-family:"Noto Serif TC",serif; font-size:2.6rem; font-weight:700; letter-spacing:.22em; text-align:center; margin:4px 0 2px}
+#qr{display:flex; justify-content:center; margin:14px 0 6px}
+#qr img,#qr canvas{border-radius:8px; background:#fff; padding:8px}
+.seat{display:flex; align-items:center; gap:11px; padding:11px 13px; border-radius:9px; background:var(--dim); margin-bottom:8px}
+.seat.empty{background:transparent; border:1px dashed var(--line); color:var(--soft)}
+.seat.off{opacity:.45}
+.av{width:32px; height:32px; border-radius:50%; flex:none; color:#fff; font-size:.85rem;
+  display:flex; align-items:center; justify-content:center; font-weight:700}
+.tagme{font-size:.7rem; background:var(--ink); color:var(--bg); padding:2px 7px; border-radius:4px}
+.taghost{font-size:.7rem; border:1px solid var(--accent); color:var(--accent); padding:1px 6px; border-radius:4px}
+.hud{position:sticky; top:0; z-index:20; background:var(--bg); padding:10px 0 8px; border-bottom:1px solid var(--line); margin-bottom:12px}
+.hud .l1{display:flex; justify-content:space-between; align-items:baseline; gap:10px}
+.hud .day{font-family:"Noto Serif TC",serif; font-weight:700; font-size:1.1rem}
+.hud .clock{font-variant-numeric:tabular-nums; font-weight:700; font-size:1.5rem}
+.hud .clock small{font-size:.72rem; font-weight:400; color:var(--soft); margin-left:4px}
+.bar{height:6px; background:var(--line2); border-radius:3px; overflow:hidden; margin-top:7px}
+.bar i{display:block; height:100%; background:var(--accent); transition:width .35s}
+.turnbar{margin-top:9px; font-size:.88rem; padding:8px 12px; border-radius:8px; background:var(--dim);
+  display:flex; justify-content:space-between; align-items:center; gap:8px}
+.turnbar.mine{background:var(--accent); color:#fff; font-weight:500}
+.plist{display:flex; gap:8px; overflow-x:auto; padding:2px 0 8px; margin-bottom:4px}
+.pcard{flex:none; width:128px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:.8rem}
+.pcard.act{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent)}
+.pcard.off{opacity:.5}
+.pcard .nm{font-weight:700; font-size:.88rem; margin-bottom:2px; display:flex; align-items:center; gap:5px}
+.pcard .nm span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.pcard .mini{display:flex; gap:6px; flex-wrap:wrap; margin-top:5px}
+.pcard .mini .coin{font-size:.75rem} .pcard .mini .coin b{width:16px; height:16px; font-size:.6rem}
+.pcard .tm{color:var(--soft); font-variant-numeric:tabular-nums}
+.hand{display:flex; flex-direction:column; gap:9px}
+.pc{width:100%; text-align:left; background:var(--card); border:1px solid var(--line); border-radius:11px; padding:0; overflow:hidden; display:block; color:inherit}
+.pc .top{display:flex; align-items:center; justify-content:space-between; padding:6px 12px; color:#fff; font-size:.76rem}
+.pc .top b{font-size:.88rem; font-variant-numeric:tabular-nums}
+.pc .mid{padding:11px 13px 4px; font-family:"Noto Serif TC",serif; font-weight:700; font-size:1.08rem; line-height:1.45}
+.pc .bot{padding:4px 13px 12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.pc .mu{font-size:.78rem; color:var(--accent); border:1px solid var(--accent); border-radius:5px; padding:2px 8px; display:inline-flex; align-items:center; gap:5px}
+.pc .mu .coin{font-size:.78rem} .pc .mu .coin b{width:17px; height:17px; font-size:.62rem}
+.pc:disabled{opacity:.45}
+.pc .flag{font-size:.72rem; padding:2px 7px; border-radius:4px; background:var(--dim); color:var(--soft)}
+.pc .flag.force{background:var(--vb); color:var(--v)}
+.pc .flag.eff{background:var(--wb); color:var(--w)}
+.log{margin-top:16px; font-size:.84rem; color:var(--soft)}
+.log div{padding:5px 0; border-bottom:1px solid var(--line2)}
+.log b{color:var(--ink); font-weight:500}
+table{width:100%; border-collapse:collapse; font-size:.88rem}
+th{text-align:left; font-size:.76rem; color:var(--soft); font-weight:500; padding:0 6px 7px 0; border-bottom:1px solid var(--line)}
+td{padding:9px 6px 9px 0; border-bottom:1px solid var(--line2); font-variant-numeric:tabular-nums}
+th.r,td.r{text-align:right; padding-right:0}
+.tot{font-weight:700; color:var(--accent)}
+.mask{position:fixed; inset:0; background:rgba(8,14,20,.55); display:flex; align-items:flex-end; justify-content:center; z-index:60; padding:14px}
+.sheet{background:var(--card); border-radius:14px; padding:18px; width:100%; max-width:440px; max-height:86vh; overflow:auto}
+@media(min-width:520px){.mask{align-items:center}}
+.pick{display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:var(--dim);
+  border:1px solid transparent; padding:11px 13px; border-radius:9px; margin-bottom:8px; color:inherit; font-size:.95rem}
+.pick:hover{border-color:var(--accent)}
+.note{font-size:.82rem; color:var(--soft); background:var(--dim); padding:10px 13px; border-radius:8px; line-height:1.65}
+.err{background:var(--vb); color:var(--v); padding:11px 14px; border-radius:8px; font-size:.88rem; margin-bottom:12px}
+details.host{margin-top:18px; border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:var(--card)}
+details.host summary{cursor:pointer; font-size:.88rem; font-weight:500}
+details.host .stack{margin-top:12px}
+.link{font-size:.8rem; word-break:break-all; background:var(--dim); padding:9px 12px; border-radius:7px; color:var(--soft)}
+.dot{width:7px; height:7px; border-radius:50%; background:#3C9D62; flex:none}
+.dot.off{background:#9AA6B0}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<script>
+/* ============================================================
+   時間管理桌遊 · 連線版（P2P）
+   主持人的裝置是主機，其他人直接連上來。不需要伺服器或帳號。
+   ============================================================ */
+
+/* ---------- 卡牌資料 ---------- */
+const DEF = [
+["work","完成報告、專題",120,"v2","","",2],["work","準備明天的小考",90,"v1 w1","","",2],
+["work","熬夜趕作業",180,"v3 h-1","","",1],["work","回覆重要訊息與郵件",20,"v1","","",2],
+["work","上台報告",60,"v2","","",1],["work","打工兼職",180,"v3","","",2],
+["work","寫下今日待辦清單",10,"v1","","eff",2],["work","參加小組討論",90,"v1 w1","","",2],
+["work","冗長的無效會議",90,"v1","","",1],["work","考取一張證照",180,"v2 w2","","",1],
+["learn","讀完一本書",60,"w2","","",2],["learn","通勤時聽 Podcast",30,"w1","","",2],
+["learn","上線上課程",90,"w2","","",2],["learn","背 10 個單字",10,"w1","","eff",2],
+["learn","寫日記、每日復盤",20,"w1 j1","","",2],["learn","請教學長姐經驗",40,"w2","","eff",1],
+["learn","看一部紀錄片",60,"w1 j1","","",1],["learn","整理讀書筆記",30,"w1","","",1],
+["learn","學習理財觀念",60,"w1 v1","","",1],["learn","學一道新料理",90,"w1 h1 j1","","",1],
+["health","晨跑 5 公里",60,"h2","","",2],["health","上健身房重訓",90,"h2 j1","","",1],
+["health","起床伸展操",10,"h1","","eff",2],["health","好好吃一頓早餐",30,"h1 j1","","",2],
+["health","小睡充電",30,"h1","","",1],["health","學校健康檢查",120,"h3","","",1],
+["health","散步曬太陽",40,"h1 j1","","",1],["health","自己下廚做晚餐",60,"h2 v1","","",1],
+["health","提早一小時上床睡覺",60,"h2","","",2],["health","今天不喝手搖飲",5,"h1","","eff",1],
+["health","冥想、深呼吸練習",15,"h1 j1","","",1],
+["fun","進電影院看電影",120,"j2","","",2],["fun","打一場電動",90,"j2","","",2],
+["fun","追劇兩集",120,"j2","","",2],["fun","逛街購物",120,"j2 v-1","","",1],
+["fun","聽音樂放空",20,"j1","","",2],["fun","和朋友玩桌遊",120,"j2 w1","","",2],
+["fun","和朋友去唱歌",180,"j3 h-1","","",1],["fun","吃一頓大餐",90,"j2 h-1","","",1],
+["fun","陪寵物玩",30,"j1 h1","","",1],["fun","週末小旅行",240,"j3 h1","","",1],
+["social","陪家人吃飯",90,"j2 v1","","",2],["social","打電話給爸媽",20,"j1","","eff",2],
+["social","朋友聚會",120,"j2","","",2],["social","陪伴最好的朋友",120,"j2 v1","","",1],
+["social","參加家族聚會",240,"j2 v1","","",1],["social","認識一個新朋友",60,"j1 w1","","",1],
+["social","社團活動與交流",120,"v2 w1","","",1],["social","陪弟妹寫作業",60,"j1 w1","","",1],
+["social","和朋友一起運動",60,"h1 j1","","",1],
+["give","幫同學撿起掉落的講義",5,"v1","","",2],["give","替後面的人扶住門",5,"v1","","",1],
+["give","讓座給需要的人",10,"v1 j1","","",2],["give","傳訊息鼓勵低潮的朋友",10,"v1 j1","j1","",2],
+["give","幫忙搬教材、整理教室",15,"v1 h1","","",1],["give","收走別人留下的垃圾",10,"v1 h1","","",1],
+["give","真心稱讚一個人的優點",5,"v1","j1","",1],
+["give","教同學看不懂的那一題",40,"v2 w1","w1","",2],
+["give","陪心情不好的朋友走一段路",60,"v2","j2","",2],
+["give","幫同學帶一份午餐",30,"v1 j1","h1","",2],
+["give","主動接下沒人要做的工作",90,"v3","","",1],["give","照顧生病的家人",120,"v2 j1","","",1],
+["give","整理筆記分享給全班",60,"v2 w1","w1","all",1],
+["give","為朋友慶生準備驚喜",120,"v2 j1","j2","",1],
+["give","捐出自己用不到的物資",40,"v2","","",1],
+["give","幫朋友搬家",180,"v2 h1","j1","",1],
+["give","擔任課輔小老師",240,"v4 w1","","",1],["give","參與淨灘、社區服務",180,"v3 h1","","",1],
+["give","帶學弟妹入門一項技能",180,"v3 w2","w2","",1],
+["give","擔任社團活動總召",240,"v3 w2 h-1","","",1],
+["give","陪長輩聊天一整個下午",180,"v3 j2","","",1],
+["give","參加公益路跑",60,"v2 h1","","",1],
+["give","發起一個幫助他人的計畫",240,"v4 w1 j1","","",1],
+["give","不好意思拒絕，接下不屬於自己的事",120,"v1 j-1","","limit",1],
+["give","幫忙到自己的事全都沒做完",180,"v3 h-1 w-1","","limit",1],
+["give","被當成理所當然的工具人",120,"j-1","","limit",1],
+["chore","上下學通勤",60,"","","",2],["chore","洗衣、曬衣",60,"h1","","",1],
+["chore","幫家裡採買日用品",90,"v1","","",1],["chore","臨櫃排隊辦事",60,"","","",1],
+["chore","修理壞掉的東西",40,"v1","","",1],["chore","記帳",20,"v1","","",1],
+["chore","大掃除整理房間",60,"h1 j1","","",1],
+["void","無意識滑手機",90,"","","waste",2],["void","短影音一刷不可收拾",120,"j1 h-1","","waste",1],
+["void","熬夜追劇到天亮",180,"j2 h-2","","waste",1],["void","網路上跟人筆戰",60,"j-1","","waste",1],
+["void","拖延症發作",60,"","","waste",1],["void","焦慮地比較別人的生活",30,"j-1","","waste",1]
+];
+const CDEF = [
+["crisis","感冒生病",120,"h-1","",""],["crisis","臨時被叫去加課",120,"v1","",""],
+["crisis","手機或電腦送修",90,"v-1","",""],["crisis","家人臨時需要幫忙",60,"j1","",""],
+["crisis","塞車、公車誤點",40,"","",""],["crisis","錢包不見了",60,"v-1","",""],
+["crisis","鄰居半夜施工睡不好",60,"h-1","",""],["crisis","臨時被託付一件急事",90,"v1","",""],
+["crisis","東西忘在家裡要折返",40,"","",""],["crisis","被放鴿子",60,"j-1","",""],
+["crisis","有人主動幫你解決難題",0,"w1","v1","thank"],
+["crisis","收到陌生人的善意",0,"j1","",""],
+["crisis","朋友請你吃飯",30,"j1 h1","v1","thank"],
+["crisis","有人幫你佔位、代領資料",0,"j1","v1","thank"],
+["crisis","被老師公開肯定",0,"w1 j1","",""],
+["crisis","天氣很好，心情莫名很好",0,"j1","",""]
+];
+const CAT = {
+  work:["學業與工作","#A8514A"], learn:["學習成長","#2F6DB5"], health:["健康身體","#38875A"],
+  fun:["休閒娛樂","#B5790F"], social:["人際關係","#7E62A0"], give:["利他付出","#C4423A"],
+  chore:["生活雜務","#77848E"], void:["時間黑洞","#3C4852"], crisis:["突發事件","#16202A"]
+};
+const CN = {v:"價",w:"智",j:"樂",h:"健"};
+const AV = ["#C4423A","#2F6DB5","#38875A","#B5790F","#7E62A0","#3C7D86"];
+
+const CARDS = {}, MAIN_POOL = [];
+DEF.forEach((d,i)=>{ CARDS[i]=d; for(let k=0;k<d[6];k++) MAIN_POOL.push(i); });
+CDEF.forEach((d,i)=>{ CARDS[1000+i]=d; });
+const CRISIS_POOL = CDEF.map((_,i)=>1000+i);
+
+function parse(s){ const o={}; (s||"").trim().split(/\s+/).filter(Boolean).forEach(t=>{o[t[0]]=parseInt(t.slice(1),10)}); return o; }
+const card = id => { const d=CARDS[id]; return {cat:d[0],name:d[1],min:d[2],gain:parse(d[3]),mu:parse(d[4]),sub:d[5]||""}; };
+const fmt = m => m<=0 ? "0" : (m>=60 ? Math.floor(m/60)+"hr"+(m%60?String(m%60):"") : m+"min");
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const coinHTML = o => Object.entries(o).map(([k,n])=>
+  `<span class="coin ${k}"><b>${CN[k]}</b>${n<0?"−":"×"}${Math.abs(n)}</span>`).join("");
+const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
+
+/* ---------- 規則常數 ---------- */
+const RANK = [10,8,6,4,2,0];
+const CFG = {free:480, turns:6, timeMul:2};
+
+/* ---------- 本機身分 ---------- */
+function localId(){
+  let v=null; try{ v=localStorage.getItem("tmg_pid"); }catch(e){}
+  if(!v){ v="p"+Math.random().toString(36).slice(2,9); try{localStorage.setItem("tmg_pid",v)}catch(e){} }
+  return v;
+}
+const ME = localId();
+let myName = ""; try{ myName = localStorage.getItem("tmg_name")||""; }catch(e){}
+
+/* ---------- 全域狀態 ---------- */
+let S = null;              // 遊戲狀態（主機為權威來源）
+let net = {host:false, peer:null, conns:[], toHost:null, code:"", online:{}};
+let err = "", pendingCard = null;
+const cfg = () => (S && S.cfg) || CFG;
+const me = () => S && S.players.find(p=>p.id===ME);
+const isHost = () => S && S.hostId===ME;
+const cur = () => S && S.players.find(p=>p.id===S.order[S.turn % S.players.length]);
+const myTurn = () => S && S.status==="playing" && cur() && cur().id===ME;
+const myTurnNo = st => Math.floor(st.turn / st.players.length) + 1;
+const spent = p => p.time<=0 && p.crisis==null;
+const say = (st,m) => { st.log = [{m}].concat(st.log||[]).slice(0,26); };
+
+/* ============================================================
+   規則引擎（只在主機上執行）
+   ============================================================ */
+function freshPlayer(id,name,free){
+  return {id,name,time:free||CFG.free,wasted:0,coins:{v:0,w:0,j:0,h:0},
+          hand:[],crisis:null,gives:0,tokens:[],score:0,days:[]};
+}
+function dealDay(st){
+  st.players.forEach(p=>{
+    p.time=st.cfg.free; p.wasted=0; p.coins={v:0,w:0,j:0,h:0}; p.gives=0; p.hand=[];
+    while(p.hand.length<5){ if(!st.deck.length) st.deck=shuffle(st.disc.splice(0)); p.hand.push(st.deck.pop()); }
+    if(!st.cdeck.length) st.cdeck=shuffle(CRISIS_POOL.slice());
+    p.crisis=st.cdeck.pop();
+  });
+  st.turn=0;
+}
+function playable(st,p,id,isCrisis){
+  if(myTurnNo(st)===st.cfg.turns && p.crisis!=null && !isCrisis) return false;
+  if(isCrisis) return true;
+  return card(id).min <= p.time;
+}
+function applyCard(st,p,id,targetId){
+  const c = card(id);
+  p.time = Math.max(0, p.time - c.min);
+  if(c.cat==="void") p.wasted += c.min;
+  Object.entries(c.gain).forEach(([k,n])=>{ p.coins[k]=Math.max(0,p.coins[k]+n); });
+  if(c.cat==="give" && c.sub!=="limit") p.gives++;
+  let extra="";
+  if(Object.keys(c.mu).length){
+    if(c.sub==="all"){
+      st.players.forEach(q=>{ if(q.id!==p.id) Object.entries(c.mu).forEach(([k,n])=>{q.coins[k]+=n}); });
+      extra = "，全體各得"+Object.entries(c.mu).map(([k,n])=>CN[k]+"×"+n).join("");
+    }else{
+      const t = st.players.find(q=>q.id===targetId);
+      if(t){
+        Object.entries(c.mu).forEach(([k,n])=>{ t.coins[k]=Math.max(0,t.coins[k]+n); });
+        if(c.sub!=="thank") t.tokens.push(p.id);
+        extra = `，${t.name} 得`+Object.entries(c.mu).map(([k,n])=>CN[k]+"×"+n).join("");
+      }
+    }
+  }
+  say(st, `<b>${esc(p.name)}</b> 花 ${fmt(c.min)} 打出「${esc(c.name)}」${extra}`);
+}
+function advance(st){
+  const n=st.players.length, last=n*st.cfg.turns;
+  st.turn++;
+  let g=0;
+  while(st.turn<last && spent(st.players.find(x=>x.id===st.order[st.turn%n])) && g++<last) st.turn++;
+  if(st.turn>=last) endDay(st);
+}
+function endDay(st){
+  const n = st.players.length;
+  const rows = st.players.map(p=>({id:p.id, idle:p.time+p.wasted, coins:{...p.coins}, gives:p.gives}));
+  rows.slice().sort((a,b)=>a.idle-b.idle)
+      .forEach((r,i)=>{ r.timeScore = RANK[Math.min(i,RANK.length-1)]*st.cfg.timeMul; });
+  rows.forEach(r=>{ r.coinScore = r.coins.v*5 + r.coins.w*4 + r.coins.j*4 + r.coins.h*4; r.giveScore=0; });
+  const byGive = rows.slice().sort((a,b)=>b.gives-a.gives);
+  if(byGive[0] && byGive[0].gives>0) byGive[0].giveScore=8;
+  if(byGive[1] && byGive[1].gives>0) byGive[1].giveScore=4;
+  const totalGive = rows.reduce((s,r)=>s+r.gives,0), need=n*2;
+  const circle = totalGive>=need ? 5 : 0;
+  rows.forEach(r=>{
+    r.circle=circle; r.total=r.timeScore+r.coinScore+r.giveScore+circle;
+    const p=st.players.find(x=>x.id===r.id); p.score+=r.total; p.days.push(r);
+  });
+  st.dayResult = {day:st.day, rows, circle, totalGive, need};
+  st.status = "dayend";
+  say(st, `第 ${st.day} 天結束，全場打出 ${totalGive} 張利他卡`+(circle?"，達成善的循環獎":""));
+}
+
+/* 所有可以改變狀態的動作，一律走這裡。actor = 發動者的玩家 id */
+const ACT = {
+  join(st, actor, d){
+    const p = st.players.find(x=>x.id===actor);
+    if(p){ p.name = d.name || p.name; return; }
+    if(st.status!=="lobby" || st.players.length>=6) return false;
+    st.players.push(freshPlayer(actor, d.name, st.cfg.free));
+    say(st, `<b>${esc(d.name)}</b> 加入了房間`);
+  },
+  setCfg(st, actor, d){
+    if(actor!==st.hostId || st.status!=="lobby") return false;
+    st.cfg = {free:d.free, turns:d.turns, timeMul:d.timeMul};
+    st.players.forEach(p=>{ p.time = st.cfg.free; });
+    say(st, `講師把設定改成：每天 ${d.free/60}hr、${d.turns} 回合、時間分 ×${d.timeMul}`);
+  },
+  setDays(st, actor, d){
+    if(actor!==st.hostId || st.status!=="lobby") return false;
+    st.days = d.days;
+  },
+  start(st, actor){
+    if(actor!==st.hostId || st.players.length<4) return false;
+    st.status="playing"; st.order=shuffle(st.players.map(p=>p.id));
+    st.deck=shuffle(MAIN_POOL.slice()); st.disc=[]; st.cdeck=shuffle(CRISIS_POOL.slice());
+    st.day=1; dealDay(st);
+    say(st, `遊戲開始，共 ${st.days} 天，每人每天 ${st.cfg.turns} 個回合`);
+  },
+  play(st, actor, d){
+    if(st.status!=="playing") return false;
+    const p = st.players.find(x=>x.id===actor);
+    if(!p || st.order[st.turn % st.players.length]!==actor) return false;
+    if(d.crisis){
+      if(p.crisis==null) return false;
+      const id = p.crisis; p.crisis=null; applyCard(st,p,id,d.target);
+    }else{
+      const i = p.hand.indexOf(d.id); if(i<0) return false;
+      if(!playable(st,p,d.id,false)) return false;
+      p.hand.splice(i,1); st.disc.push(d.id);
+      if(!st.deck.length) st.deck=shuffle(st.disc.splice(0));
+      if(st.deck.length) p.hand.push(st.deck.pop());
+      applyCard(st,p,d.id,d.target);
+    }
+    advance(st);
+  },
+  pass(st, actor){
+    if(st.status!=="playing") return false;
+    const p = st.players.find(x=>x.id===actor);
+    if(!p || st.order[st.turn % st.players.length]!==actor) return false;
+    if(p.hand.length){
+      const id=p.hand.shift(); st.disc.push(id);
+      if(!st.deck.length) st.deck=shuffle(st.disc.splice(0));
+      if(st.deck.length) p.hand.push(st.deck.pop());
+    }
+    say(st, `<b>${esc(p.name)}</b> 沒有可用的卡牌，棄牌後結束回合`);
+    advance(st);
+  },
+  repay(st, actor, d){
+    const p=st.players.find(x=>x.id===actor), f=st.players.find(x=>x.id===d.from);
+    if(!p||!f) return false;
+    const i=p.tokens.indexOf(d.from); if(i<0) return false;
+    p.tokens.splice(i,1); f.coins.v+=1;
+    say(st, `<b>${esc(p.name)}</b> 還了 ${esc(f.name)} 一個人情，${esc(f.name)} 得價值幣 ×1`);
+  },
+  next(st, actor){
+    if(actor!==st.hostId || st.status!=="dayend") return false;
+    if(st.day>=st.days){
+      st.players.forEach(p=>{ p.tokenBonus=p.tokens.length*2; p.score+=p.tokenBonus; });
+      st.status="ended"; say(st,"遊戲結束，未兌現的人情各加 2 分"); return;
+    }
+    st.day++; st.status="playing"; st.dayResult=null; dealDay(st);
+    say(st, `第 ${st.day} 天開始`);
+  },
+  skip(st, actor){
+    if(actor!==st.hostId || st.status!=="playing") return false;
+    say(st, `講師讓 <b>${esc(cur().name)}</b> 跳過這一回合`); advance(st);
+  },
+  endDay(st, actor){
+    if(actor!==st.hostId || st.status!=="playing") return false;
+    say(st,"講師提前結束了今天"); endDay(st);
+  },
+  adjust(st, actor, d){
+    if(actor!==st.hostId) return false;
+    const p=st.players.find(x=>x.id===d.pid); if(!p) return false;
+    if(d.kind==="coin"){ p.coins[d.k]=Math.max(0,p.coins[d.k]+d.n);
+      say(st,`講師調整 <b>${esc(p.name)}</b> 的${CN[d.k]}幣 ${d.n>0?"+":""}${d.n}`); }
+    else { p.time=Math.max(0,p.time+d.n);
+      say(st,`講師調整 <b>${esc(p.name)}</b> 的時間 ${d.n>0?"+":""}${fmt(Math.abs(d.n))}`); }
+  },
+  kick(st, actor, d){
+    if(actor!==st.hostId || st.status!=="lobby") return false;
+    const i=st.players.findIndex(x=>x.id===d.pid);
+    if(i<0 || st.players[i].id===st.hostId) return false;
+    say(st, `<b>${esc(st.players[i].name)}</b> 被移出房間`);
+    st.players.splice(i,1);
+  },
+  reset(st, actor){
+    if(actor!==st.hostId) return false;
+    st.status="lobby"; st.day=1; st.turn=0; st.dayResult=null;
+    st.players = st.players.map(p=>freshPlayer(p.id,p.name,st.cfg.free));
+    st.log=[{m:"講師重設了這一局"}];
+  }
+};
+
+/* ============================================================
+   連線層
+   ============================================================ */
+const CODE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+const code4 = () => Array.from({length:4},()=>CODE_LETTERS[Math.floor(Math.random()*CODE_LETTERS.length)]).join("");
+const peerId = c => "tmgame-2026-" + c;
+const shareURL = () => location.origin + location.pathname + "#" + net.code;
+
+function act(name, payload){
+  if(net.host){
+    if(ACT[name] && ACT[name](S, ME, payload||{})!==false) broadcast();
+    render();
+  }else if(net.toHost && net.toHost.open){
+    net.toHost.send({t:"act", name, payload:payload||{}});
+  }
+}
+function broadcast(){
+  const msg = {t:"state", state:S, online:onlineMap()};
+  net.conns.forEach(c=>{ if(c.open) try{ c.send(msg); }catch(e){} });
+}
+function onlineMap(){
+  const m = {}; m[ME]=true;
+  net.conns.forEach(c=>{ if(c.open && c.metadata && c.metadata.pid) m[c.metadata.pid]=true; });
+  return m;
+}
+
+function hostRoom(name, days){
+  if(!window.Peer){ err="連線元件沒有載入成功，請檢查網路後重新整理。"; render(); return; }
+  const c = code4();
+  net.host = true; net.code = c;
+  S = {code:c, status:"lobby", hostId:ME, days:days, cfg:{...CFG},
+       players:[freshPlayer(ME,name,CFG.free)], order:[], day:1, turn:0,
+       deck:[], disc:[], cdeck:[], log:[], };
+  const peer = new Peer(peerId(c), {debug:0});
+  net.peer = peer;
+  peer.on("open", ()=>{ location.hash = c; render(); });
+  peer.on("connection", conn=>{
+    net.conns.push(conn);
+    conn.on("open", ()=>{ conn.send({t:"state", state:S, online:onlineMap()}); render(); });
+    conn.on("data", d=>{
+      if(!d || d.t!=="act") return;
+      const pid = conn.metadata && conn.metadata.pid;
+      if(!pid) return;
+      if(ACT[d.name] && ACT[d.name](S, pid, d.payload||{})!==false){ broadcast(); }
+      render();
+    });
+    conn.on("close", ()=>{ net.conns = net.conns.filter(x=>x!==conn); broadcast(); render(); });
+    conn.on("error", ()=>{});
+  });
+  peer.on("error", e=>{
+    if(e && e.type==="unavailable-id"){ hostRoom(name, days); return; }  // 房號撞號，換一組
+    err = "建立房間失敗，請重新整理再試一次。"; render();
+  });
+  render();
+}
+function joinRoom(c, name){
+  if(!window.Peer){ err="連線元件沒有載入成功，請檢查網路後重新整理。"; render(); return; }
+  c = c.toUpperCase().trim();
+  if(c.length!==4){ err="房號是 4 個英文字母。"; render(); return; }
+  net.host=false; net.code=c; err="正在連線…"; render();
+  const peer = new Peer({debug:0});
+  net.peer = peer;
+  peer.on("open", ()=>{
+    const conn = peer.connect(peerId(c), {metadata:{pid:ME}, reliable:true});
+    net.toHost = conn;
+    conn.on("open", ()=>{ err=""; conn.send({t:"act", name:"join", payload:{name}}); render(); });
+    conn.on("data", d=>{
+      if(d && d.t==="state"){ S = d.state; net.online = d.online||{}; err=""; location.hash=c; render(); }
+    });
+    conn.on("close", ()=>{ err="和主持人的連線中斷了，請按重新連線。"; render(); });
+    conn.on("error", ()=>{ err="連不上這個房間，請確認房號，或請主持人確認頁面還開著。"; render(); });
+  });
+  peer.on("error", e=>{
+    err = (e && e.type==="peer-unavailable")
+      ? "找不到這個房間。請確認房號正確，而且主持人的頁面還開著。"
+      : "連線發生問題，請重新整理再試一次。";
+    render();
+  });
+}
+function leave(){
+  try{ if(net.peer) net.peer.destroy(); }catch(e){}
+  net = {host:false, peer:null, conns:[], toHost:null, code:"", online:{}};
+  S = null; err=""; location.hash=""; render();
+}
+const isOnline = pid => net.host ? !!onlineMap()[pid] : (pid===ME || !!net.online[pid]);
+
+/* ============================================================
+   畫面
+   ============================================================ */
+const app = document.getElementById("app");
+const errHTML = () => err ? `<div class="err">${esc(err)}</div>` : "";
+
+function render(){
+  if(!S){ app.innerHTML = screenJoin(); bindJoin(); return; }
+  if(S.status==="lobby"){ app.innerHTML = screenLobby(); bindLobby(); return; }
+  if(S.status==="ended"){ app.innerHTML = screenEnd(); bindEnd(); return; }
+  if(S.status==="dayend"){ app.innerHTML = screenDayEnd(); bindDayEnd(); return; }
+  app.innerHTML = screenGame(); bindGame();
+}
+
+function screenJoin(){
+  const pre = (location.hash||"").replace("#","").toUpperCase().slice(0,4);
+  return `
+  <div class="hero">
+    <h1>時間管理桌遊</h1>
+    <p>4～6 人連線對局。時間只會不斷流逝，抓住它的人才走得遠。</p>
+  </div>
+  ${errHTML()}
+  <div class="panel">
+    <label class="muted">你的名字</label>
+    <input id="nm" maxlength="8" placeholder="取一個名字，8 字以內" value="${esc(myName)}" autocomplete="off">
+    <label class="muted" style="display:block; margin-top:14px">房號</label>
+    <input id="cd" class="code-in" maxlength="4" placeholder="ABCD" value="${esc(pre)}" autocomplete="off">
+    <button class="btn go" id="jn" style="margin-top:12px">加入房間</button>
+  </div>
+  <div class="panel">
+    <div class="muted" style="margin-bottom:10px">還沒有房間？由帶活動的人建立一間，再把房號給大家。</div>
+    <select id="dy"><option value="1">玩 1 天（約 15 分鐘）</option>
+      <option value="3" selected>玩 3 天（約 30 分鐘）</option>
+      <option value="7">玩 7 天（完整一週）</option></select>
+    <button class="btn alt" id="mk" style="margin-top:10px">我是主持人，建立房間</button>
+    <div class="note" style="margin-top:12px">主持人的裝置就是這場遊戲的主機。開始之後請讓這個頁面保持開著，不要關掉或讓螢幕長時間休眠。</div>
+  </div>`;
+}
+function bindJoin(){
+  const nm = document.getElementById("nm");
+  const grab = ()=>{
+    const v = nm.value.trim();
+    if(!v){ err="請先輸入你的名字。"; render(); return null; }
+    myName = v; try{ localStorage.setItem("tmg_name",v); }catch(e){}
+    return v;
+  };
+  document.getElementById("mk").onclick = ()=>{ const v=grab(); if(v) hostRoom(v, +document.getElementById("dy").value); };
+  document.getElementById("jn").onclick = ()=>{ const v=grab(); if(v) joinRoom(document.getElementById("cd").value, v); };
+}
+
+function seatHTML(p,i){
+  const on = isOnline(p.id);
+  return `<div class="seat ${on?"":"off"}">
+    <span class="av" style="background:${AV[i%6]}">${esc(p.name[0]||"?")}</span>
+    <span class="dot ${on?"":"off"}"></span>
+    <strong style="flex:1">${esc(p.name)}</strong>
+    ${p.id===S.hostId?'<span class="taghost">主持人</span>':""}
+    ${p.id===ME?'<span class="tagme">你</span>':""}
+    ${isHost()&&p.id!==ME?`<button class="btn sm alt kick" data-p="${p.id}" style="padding:4px 9px">移除</button>`:""}
+  </div>`;
+}
+function screenLobby(){
+  const n = S.players.length;
+  return `
+  <div class="hero" style="padding-bottom:6px">
+    <p class="muted" style="margin-bottom:2px">房號</p>
+    <div class="roomcode">${S.code}</div>
+    ${net.host?`<div id="qr"></div><div class="link">${esc(shareURL())}</div>
+      <button class="btn alt sm" id="cp" style="margin-top:10px">複製邀請連結</button>`
+      :`<p class="muted">已連上主持人</p>`}
+  </div>
+  ${errHTML()}
+  <div class="panel">
+    <div class="row" style="justify-content:space-between; margin-bottom:12px">
+      <h2 style="font-size:1.05rem">玩家 ${n} / 6</h2><span class="muted">最少 4 人開始</span>
+    </div>
+    ${S.players.map(seatHTML).join("")}
+    ${Array.from({length:Math.max(0,4-n)},()=>'<div class="seat empty">等待加入…</div>').join("")}
+  </div>
+  <div class="panel">
+    <div class="note">這一局預計玩 <b>${S.days}</b> 天。每天每人 <b>${cfg().turns}</b> 個回合，扣掉睡眠與上學等固定行程後，你有 <b>${fmt(cfg().free)}</b> 可以自己決定怎麼用。</div>
+    ${isHost()?`<details style="margin-top:12px"><summary class="muted" style="cursor:pointer">進階設定</summary>
+      <div class="stack" style="margin-top:10px">
+        <label class="muted">每天可自由運用的時數<input id="cf" type="number" min="2" max="16" value="${cfg().free/60}"></label>
+        <label class="muted">每人每天回合數<input id="ct" type="number" min="3" max="12" value="${cfg().turns}"></label>
+        <label class="muted">時間分倍率（原規則為 1）<input id="cm" type="number" min="1" max="5" value="${cfg().timeMul}"></label>
+        <button class="btn alt sm" id="cs">套用設定</button>
+      </div></details>`:""}
+  </div>
+  ${isHost()
+    ? `<button class="btn go" id="st" ${n<4?"disabled":""}>${n<4?`還差 ${4-n} 人才能開始`:"開始遊戲"}</button>`
+    : `<div class="note">等待主持人開始遊戲…</div>`}
+  <button class="btn alt" id="lv" style="margin-top:10px">離開房間</button>`;
+}
+function bindLobby(){
+  const st=document.getElementById("st"); if(st) st.onclick = ()=>act("start");
+  document.getElementById("lv").onclick = leave;
+  document.querySelectorAll(".kick").forEach(b=> b.onclick = ()=>act("kick",{pid:b.dataset.p}));
+  const cs=document.getElementById("cs");
+  if(cs) cs.onclick = ()=>act("setCfg",{
+    free: Math.min(16,Math.max(2,+document.getElementById("cf").value||8))*60,
+    turns: Math.min(12,Math.max(3,+document.getElementById("ct").value||6)),
+    timeMul: Math.min(5,Math.max(1,+document.getElementById("cm").value||2))});
+  const cp=document.getElementById("cp");
+  if(cp) cp.onclick = ()=>{
+    const t = shareURL();
+    if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>{cp.textContent="已複製"});
+    else { cp.textContent = "請長按上方連結複製"; }
+  };
+  const q=document.getElementById("qr");
+  if(q && window.QRCode){ q.innerHTML=""; try{ new QRCode(q,{text:shareURL(),width:150,height:150,correctLevel:QRCode.CorrectLevel.M}); }catch(e){} }
+}
+
+function pcardHTML(p,i){
+  const act = cur() && cur().id===p.id, on = isOnline(p.id);
+  return `<div class="pcard ${act?"act":""} ${on?"":"off"}">
+    <div class="nm"><span class="av" style="background:${AV[i%6]};width:20px;height:20px;font-size:.62rem">${esc(p.name[0]||"?")}</span>
+      <span>${esc(p.name)}</span>${p.id===ME?'<span class="tagme">你</span>':""}</div>
+    <div class="tm">剩 ${fmt(p.time)}${p.wasted?` · 浪費 ${fmt(p.wasted)}`:""}</div>
+    <div class="mini">${["v","w","j","h"].map(k=>`<span class="coin ${k} ${p.coins[k]?"":"zero"}"><b>${CN[k]}</b>${p.coins[k]}</span>`).join("")}</div>
+    <div class="tm" style="margin-top:4px">利他 ${p.gives} · ${p.score} 分</div>
+  </div>`;
+}
+function cardHTML(id, ok, isCrisis){
+  const c=card(id), col=CAT[c.cat][1], flags=[];
+  if(isCrisis) flags.push('<span class="flag force">今天必須打出</span>');
+  if(c.sub==="eff") flags.push('<span class="flag eff">高效</span>');
+  if(c.sub==="waste") flags.push('<span class="flag">時間進浪費區</span>');
+  const muTxt = Object.keys(c.mu).length
+    ? `<span class="mu">${c.sub==="all"?"全體各得":c.sub==="thank"?"指定一人得":"對方得"} ${coinHTML(c.mu)}</span>`:"";
+  return `<button class="pc" data-id="${id}" data-cr="${isCrisis?1:0}" ${ok?"":"disabled"}>
+    <div class="top" style="background:${col}"><span>${CAT[c.cat][0]}</span><b>${c.min?fmt(c.min):"不花時間"}</b></div>
+    <div class="mid">${esc(c.name)}</div>
+    <div class="bot">${Object.keys(c.gain).length?coinHTML(c.gain):'<span class="muted">無獲得</span>'}${muTxt}${flags.join("")}</div>
+  </button>`;
+}
+function screenGame(){
+  const p=me(), c=cur(), tno=myTurnNo(S);
+  const hand = p.hand.map(id=>cardHTML(id, myTurn()&&playable(S,p,id,false), false));
+  const crisis = p.crisis!=null ? cardHTML(p.crisis, myTurn(), true) : "";
+  const anyPlayable = myTurn() && (p.crisis!=null || p.hand.some(id=>playable(S,p,id,false)));
+  return `
+  <div class="hud">
+    <div class="l1">
+      <div><span class="day">第 ${S.day} 天</span> <span class="muted">／ ${S.days} 天　第 ${tno} ／ ${cfg().turns} 回合</span></div>
+      <div class="clock">${fmt(p.time)}<small>剩餘</small></div>
+    </div>
+    <div class="bar"><i style="width:${Math.round(p.time/cfg().free*100)}%"></i></div>
+    <div class="turnbar ${myTurn()?"mine":""}">
+      <span>${myTurn()?"輪到你了，選一張卡打出":`等待 ${esc(c?c.name:"")} 出牌…`}</span>
+      <span style="font-size:.78rem;opacity:.8">房號 ${S.code}</span>
+    </div>
+  </div>
+  ${errHTML()}
+  <div class="plist">${S.players.map(pcardHTML).join("")}</div>
+  ${p.tokens.length?`<div class="panel" style="padding:13px 15px">
+    <div class="muted" style="margin-bottom:8px">你欠著 ${p.tokens.length} 個人情，隨時可以還</div>
+    ${p.tokens.map(f=>{const q=S.players.find(x=>x.id===f); return q?
+      `<button class="btn sm alt rp" data-f="${f}" style="margin:0 6px 6px 0">還 ${esc(q.name)} 一個人情</button>`:""}).join("")}
+  </div>`:""}
+  ${crisis?`<h3 style="font-size:.95rem; margin:14px 0 8px">突發事件</h3><div class="hand">${crisis}</div>`:""}
+  <h3 style="font-size:.95rem; margin:16px 0 8px">你的手牌</h3>
+  <div class="hand">${hand.join("")}</div>
+  ${myTurn()&&!anyPlayable?`<button class="btn alt" id="ps" style="margin-top:12px">沒有可用的卡牌，棄一張並結束回合</button>`:""}
+  ${hostPanel()}
+  <div class="log">${(S.log||[]).map(l=>`<div>${l.m}</div>`).join("")}</div>`;
+}
+function hostPanel(){
+  if(!isHost()) return "";
+  return `<details class="host"><summary>主持人控制台</summary><div class="stack">
+    <div class="row" style="flex-wrap:wrap; gap:8px">
+      <button class="btn sm alt" id="hsk">跳過目前玩家</button>
+      <button class="btn sm alt" id="hed">直接結束今天</button>
+      <button class="btn sm alt" id="hrs">重設整局</button>
+    </div>
+    <div class="muted">手動調整</div>
+    <div class="row"><select id="hp" style="flex:1">${S.players.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select>
+      <select id="hk" style="width:92px"><option value="v">價值</option><option value="w">智慧</option><option value="j">快樂</option><option value="h">健康</option></select></div>
+    <div class="row" style="gap:8px; flex-wrap:wrap">
+      <button class="btn sm alt hc" data-n="1">幣 +1</button><button class="btn sm alt hc" data-n="-1">幣 −1</button>
+      <button class="btn sm alt ht" data-n="60">時間 +1hr</button><button class="btn sm alt ht" data-n="-60">時間 −1hr</button>
+    </div></div></details>`;
+}
+function bindGame(){
+  document.querySelectorAll(".pc").forEach(b=> b.onclick = ()=>{
+    const id=+b.dataset.id, cr=b.dataset.cr==="1", c=card(id);
+    if(Object.keys(c.mu).length && c.sub!=="all"){ pendingCard={id,cr}; openPicker(c); }
+    else act("play",{id, crisis:cr, target:null});
+  });
+  document.querySelectorAll(".rp").forEach(b=> b.onclick = ()=>act("repay",{from:b.dataset.f}));
+  const ps=document.getElementById("ps"); if(ps) ps.onclick = ()=>act("pass");
+  if(isHost()){
+    document.getElementById("hsk").onclick = ()=>act("skip");
+    document.getElementById("hed").onclick = ()=>act("endDay");
+    document.getElementById("hrs").onclick = ()=>{ if(confirm("確定要把這一局重設回大廳嗎？")) act("reset"); };
+    document.querySelectorAll(".hc").forEach(b=> b.onclick = ()=>act("adjust",
+      {kind:"coin", pid:document.getElementById("hp").value, k:document.getElementById("hk").value, n:+b.dataset.n}));
+    document.querySelectorAll(".ht").forEach(b=> b.onclick = ()=>act("adjust",
+      {kind:"time", pid:document.getElementById("hp").value, n:+b.dataset.n}));
+  }
+}
+function openPicker(c){
+  const mask=document.createElement("div"); mask.className="mask";
+  mask.innerHTML = `<div class="sheet">
+    <h3 style="font-size:1.05rem; margin-bottom:4px">${esc(c.name)}</h3>
+    <p class="muted" style="margin:0 0 14px">${c.sub==="thank"?"是誰幫了你？對方會得到":"你要幫誰？對方會得到"} ${coinHTML(c.mu)}</p>
+    ${S.players.filter(p=>p.id!==ME).map(p=>
+      `<button class="pick" data-p="${p.id}"><span class="av" style="background:${AV[S.players.findIndex(x=>x.id===p.id)%6]}">${esc(p.name[0]||"?")}</span>${esc(p.name)}</button>`).join("")}
+    <button class="btn alt" id="cx" style="margin-top:6px">取消</button></div>`;
+  document.body.appendChild(mask);
+  mask.querySelectorAll(".pick").forEach(b=> b.onclick = ()=>{
+    const t=b.dataset.p; mask.remove();
+    if(pendingCard){ act("play",{id:pendingCard.id, crisis:pendingCard.cr, target:t}); pendingCard=null; }
+  });
+  mask.querySelector("#cx").onclick = ()=>{ pendingCard=null; mask.remove(); };
+}
+function screenDayEnd(){
+  const R=S.dayResult, rows=R.rows.slice().sort((a,b)=>b.total-a.total);
+  const nm = id => esc(S.players.find(p=>p.id===id).name);
+  return `
+  <div class="hero" style="padding:30px 0 14px">
+    <h1 style="font-size:1.5rem">第 ${R.day} 天結算</h1>
+    <p class="muted">全場共打出 ${R.totalGive} 張利他卡${R.circle?"，達成善的循環獎，全體 +5 分":`，還差 ${Math.max(0,R.need-R.totalGive)} 張就能讓全體加分`}</p>
+  </div>
+  <div class="panel">
+    <table><tr><th>玩家</th><th class="r">時間</th><th class="r">積分</th><th class="r">利他</th><th class="r">本日</th></tr>
+    ${rows.map(r=>`<tr><td>${nm(r.id)}</td><td class="r">${r.timeScore}</td><td class="r">${r.coinScore}</td>
+      <td class="r">${r.giveScore+r.circle}</td><td class="r tot">${r.total}</td></tr>`).join("")}</table>
+    <div class="note" style="margin-top:14px">時間分看的是「剩餘時間 ＋ 浪費區時間」，兩者加起來最少的人拿最高分。閒置和虛耗一樣痛。善的循環獎需要全場打出 ${R.need} 張利他卡。</div>
+  </div>
+  <div class="panel"><h3 style="font-size:1rem; margin-bottom:10px">累計總分</h3>
+    ${S.players.slice().sort((a,b)=>b.score-a.score).map((p,i)=>
+      `<div class="seat"><span class="av" style="background:${AV[S.players.findIndex(x=>x.id===p.id)%6]}">${i+1}</span>
+       <strong style="flex:1">${esc(p.name)}</strong><span class="tot">${p.score} 分</span></div>`).join("")}</div>
+  ${isHost()?`<button class="btn go" id="nx">${S.day>=S.days?"看最終結果":"進入第 "+(S.day+1)+" 天"}</button>`
+            :`<div class="note">等待主持人繼續…</div>`}`;
+}
+function bindDayEnd(){ const b=document.getElementById("nx"); if(b) b.onclick = ()=>act("next"); }
+function screenEnd(){
+  const rank=S.players.slice().sort((a,b)=>b.score-a.score);
+  const tg=S.players.reduce((s,p)=>s+p.days.reduce((x,d)=>x+d.gives,0),0);
+  return `
+  <div class="hero" style="padding:34px 0 12px">
+    <h1 style="font-size:1.6rem">${esc(rank[0].name)} 獲勝</h1>
+    <p class="muted">${S.days} 天裡，全場一共打出了 ${tg} 張利他卡</p></div>
+  <div class="panel">${rank.map((p,i)=>`<div class="seat">
+    <span class="av" style="background:${AV[S.players.findIndex(x=>x.id===p.id)%6]}">${i+1}</span>
+    <div style="flex:1"><strong>${esc(p.name)}</strong>
+      <div class="muted" style="font-size:.8rem">利他 ${p.days.reduce((x,d)=>x+d.gives,0)} 張${p.tokenBonus?` · 未兌現人情 +${p.tokenBonus}`:""}</div></div>
+    <span class="tot">${p.score} 分</span></div>`).join("")}</div>
+  <div class="panel"><div class="note">回頭看看：你為了幫別人花掉的時間，值得嗎？浪費區裡堆了多少小時？如果重來一次，你會怎麼分配給自己和給別人的時間？</div></div>
+  ${isHost()?`<button class="btn go" id="ag">再玩一局</button>`:""}
+  <button class="btn alt" id="lv" style="margin-top:10px">離開房間</button>`;
+}
+function bindEnd(){
+  const a=document.getElementById("ag"); if(a) a.onclick = ()=>act("reset");
+  document.getElementById("lv").onclick = leave;
+}
+
+render();
+</script>
+</body>
+</html>
