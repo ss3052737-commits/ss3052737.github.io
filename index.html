@@ -424,6 +424,54 @@ const code4 = () => Array.from({length:4},()=>CODE_LETTERS[Math.floor(Math.rando
 const peerId = c => "tmgame-2026-" + c;
 const shareURL = () => location.origin + location.pathname + "#" + net.code;
 
+/* ---------- STUN / TURN ----------------------------------------------------
+   只有 STUN 的話，行動網路（4G/5G）和很多校園 WiFi 打不通，會一直卡在
+   「正在連線…」。TURN 是中繼伺服器，可以繞過這個限制。
+
+   免費取得方式（免信用卡，每月 20GB，這個遊戲用不到 1GB）：
+     1. 到 https://dashboard.metered.ca/ 註冊並建立一個 app
+     2. 進入該 app 的 TURN 頁面，複製 credentials
+     3. 把 host / username / credential 三個值填進下面，存檔後 push
+   填好之後，行動網路就能正常連線。留空則只用 STUN。
+--------------------------------------------------------------------------- */
+const TURN = {
+  host: "",         // 例如 "myapp.relay.metered.ca"
+  username: "",
+  credential: ""
+};
+const hasTurn = () => !!(TURN.host && TURN.username && TURN.credential);
+function iceServers(){
+  const list = [{urls:["stun:stun.l.google.com:19302",
+                       "stun:stun1.l.google.com:19302",
+                       "stun:stun.cloudflare.com:3478"]}];
+  if(hasTurn()){
+    const h = TURN.host, u = TURN.username, p = TURN.credential;
+    ["turn:"+h+":80", "turn:"+h+":80?transport=tcp",
+     "turn:"+h+":443", "turns:"+h+":443?transport=tcp"]
+      .forEach(urls => list.push({urls:urls, username:u, credential:p}));
+  }
+  return list;
+}
+const peerOpts = () => ({debug:0, config:{iceServers:iceServers(), iceCandidatePoolSize:2}});
+const turnWarn = () => hasTurn() ? "" :
+  '<div class="note" style="margin-top:10px">尚未設定 TURN 中繼伺服器。用行動網路（4G/5G）的人可能會連不上，建議大家連同一個 WiFi，或連主持人開的熱點。</div>';
+
+/* ---------- 主持人裝置防休眠 ---------- */
+let wakeLock = null;
+async function keepAwake(){
+  try{
+    if("wakeLock" in navigator && !wakeLock){
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", ()=>{ wakeLock = null; });
+    }
+  }catch(e){}
+}
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState !== "visible") return;
+  if(net.host) keepAwake();
+  if(net.peer && net.peer.disconnected && !net.peer.destroyed){ try{ net.peer.reconnect(); }catch(e){} }
+});
+
 function act(name, payload){
   if(net.host){
     if(ACT[name] && ACT[name](S, ME, payload||{})!==false) broadcast();
@@ -449,9 +497,13 @@ function hostRoom(name, days){
   S = {code:c, status:"lobby", hostId:ME, days:days, cfg:{...CFG},
        players:[freshPlayer(ME,name,CFG.free)], order:[], day:1, turn:0,
        deck:[], disc:[], cdeck:[], log:[], };
-  const peer = new Peer(peerId(c), {debug:0});
+  const peer = new Peer(peerId(c), peerOpts());
   net.peer = peer;
-  peer.on("open", ()=>{ location.hash = c; render(); });
+  peer.on("open", ()=>{ location.hash = c; err=""; keepAwake(); render(); });
+  peer.on("disconnected", ()=>{
+    if(peer.destroyed) return;
+    setTimeout(()=>{ try{ peer.reconnect(); }catch(e){} }, 1000);
+  });
   peer.on("connection", conn=>{
     net.conns.push(conn);
     conn.on("open", ()=>{ conn.send({t:"state", state:S, online:onlineMap()}); render(); });
@@ -466,37 +518,75 @@ function hostRoom(name, days){
     conn.on("error", ()=>{});
   });
   peer.on("error", e=>{
-    if(e && e.type==="unavailable-id"){ hostRoom(name, days); return; }  // 房號撞號，換一組
+    const t = e && e.type;
+    if(t==="unavailable-id"){ try{ peer.destroy(); }catch(x){} hostRoom(name, days); return; } // 房號撞號，換一組
+    if(t==="peer-unavailable" || t==="network") return;   // 單一玩家的連線問題，房間不用整個掛掉
     err = "建立房間失敗，請重新整理再試一次。"; render();
   });
   render();
 }
-function joinRoom(c, name){
+
+/* ---------- 玩家端：連線 + 自動重試 ---------- */
+let joinInfo = null, joinTimer = null, joinTries = 0, rejoinPending = false;
+function joinRoom(c, name, isRetry){
   if(!window.Peer){ err="連線元件沒有載入成功，請檢查網路後重新整理。"; render(); return; }
-  c = c.toUpperCase().trim();
+  c = (c||"").toUpperCase().trim();
   if(c.length!==4){ err="房號是 4 個英文字母。"; render(); return; }
-  net.host=false; net.code=c; err="正在連線…"; render();
-  const peer = new Peer({debug:0});
+  rejoinPending = false;
+  if(!isRetry) joinTries = 0;
+  joinInfo = {c:c, name:name};
+  net.host = false; net.code = c;
+  err = joinTries ? "連線不太順，正在重試（第 "+(joinTries+1)+" 次）…" : "正在連線…";
+  render();
+  try{ if(net.peer) net.peer.destroy(); }catch(e){}
+  const peer = new Peer(peerOpts());
   net.peer = peer;
+  clearTimeout(joinTimer);
+  joinTimer = setTimeout(()=>retryJoin(), 20000);   // 20 秒還沒連上就重來
   peer.on("open", ()=>{
     const conn = peer.connect(peerId(c), {metadata:{pid:ME}, reliable:true});
     net.toHost = conn;
-    conn.on("open", ()=>{ err=""; conn.send({t:"act", name:"join", payload:{name}}); render(); });
+    conn.on("open", ()=>{
+      clearTimeout(joinTimer); joinTries = 0; err = "";
+      conn.send({t:"act", name:"join", payload:{name:name}}); render();
+    });
     conn.on("data", d=>{
       if(d && d.t==="state"){ S = d.state; net.online = d.online||{}; err=""; location.hash=c; render(); }
     });
-    conn.on("close", ()=>{ err="和主持人的連線中斷了，請按重新連線。"; render(); });
-    conn.on("error", ()=>{ err="連不上這個房間，請確認房號，或請主持人確認頁面還開著。"; render(); });
+    conn.on("close", ()=>{ err="和主持人的連線中斷了，正在重新連線…"; render(); retryJoin(true); });
+    conn.on("error", ()=>retryJoin());
   });
+  peer.on("disconnected", ()=>{ if(!peer.destroyed){ try{ peer.reconnect(); }catch(e){} } });
   peer.on("error", e=>{
-    err = (e && e.type==="peer-unavailable")
-      ? "找不到這個房間。請確認房號正確，而且主持人的頁面還開著。"
-      : "連線發生問題，請重新整理再試一次。";
-    render();
+    const t = e && e.type;
+    if(t==="peer-unavailable"){
+      clearTimeout(joinTimer);
+      err = "找不到這個房間。請確認房號正確，而且主持人的頁面還開著。";
+      render(); return;
+    }
+    retryJoin();
   });
 }
+function retryJoin(soft){
+  if(rejoinPending || !joinInfo) return;
+  clearTimeout(joinTimer);
+  joinTries++;
+  if(joinTries > 4){
+    err = hasTurn()
+      ? "一直連不上主持人。請確認雙方網路正常，或改用同一個 WiFi／主持人的熱點再試一次。"
+      : "一直連不上主持人。行動網路（4G/5G）通常需要 TURN 中繼伺服器才連得上；先改用同一個 WiFi 或主持人開的熱點會比較快。";
+    joinInfo = null; render(); return;
+  }
+  rejoinPending = true;
+  const info = joinInfo;
+  setTimeout(()=>{ rejoinPending = false; if(joinInfo) joinRoom(info.c, info.name, true); }, soft ? 1500 : 800);
+}
+
 function leave(){
   try{ if(net.peer) net.peer.destroy(); }catch(e){}
+  clearTimeout(joinTimer); joinInfo = null; joinTries = 0; rejoinPending = false;
+  try{ if(wakeLock) wakeLock.release(); }catch(e){}
+  wakeLock = null;
   net = {host:false, peer:null, conns:[], toHost:null, code:"", online:{}};
   S = null; err=""; location.hash=""; render();
 }
@@ -538,6 +628,7 @@ function screenJoin(){
       <option value="7">玩 7 天（完整一週）</option></select>
     <button class="btn alt" id="mk" style="margin-top:10px">我是主持人，建立房間</button>
     <div class="note" style="margin-top:12px">主持人的裝置就是這場遊戲的主機。開始之後請讓這個頁面保持開著，不要關掉或讓螢幕長時間休眠。</div>
+  ${turnWarn()}
   </div>`;
 }
 function bindJoin(){
@@ -583,6 +674,7 @@ function screenLobby(){
   </div>
   <div class="panel">
     <div class="note">這一局預計玩 <b>${S.days}</b> 天。每天每人 <b>${cfg().turns}</b> 個回合，扣掉睡眠與上學等固定行程後，你有 <b>${fmt(cfg().free)}</b> 可以自己決定怎麼用。</div>
+    ${turnWarn()}
     ${isHost()?`<details style="margin-top:12px"><summary class="muted" style="cursor:pointer">進階設定</summary>
       <div class="stack" style="margin-top:10px">
         <label class="muted">每天可自由運用的時數<input id="cf" type="number" min="2" max="16" value="${cfg().free/60}"></label>
